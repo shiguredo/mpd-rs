@@ -1,0 +1,10 @@
+[package]
+name = "shiguredo_mpd_pbt"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dev-dependencies]
+proptest = "1"
+shiguredo_mpd = { path = ".." }
+xml = "1.2"

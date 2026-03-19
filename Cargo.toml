@@ -1,0 +1,19 @@
+[package]
+name = "shiguredo_mpd"
+version = "2026.0.0"
+edition = "2024"
+rust-version = "1.88"
+authors = ["Shiguredo Inc."]
+license = "Apache-2.0"
+description = "MPD parser for MPEG-DASH"
+homepage = "https://github.com/shiguredo/mpd-rs"
+repository = "https://github.com/shiguredo/mpd-rs"
+readme = "README.md"
+include = ["/src/**", "/LICENSE", "/README.md"]
+
+[dependencies]
+xml = "1.2"
+
+[workspace]
+members = ["pbt"]
+exclude = ["fuzz"]
