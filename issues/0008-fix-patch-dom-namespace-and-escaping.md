@@ -27,13 +27,14 @@
 - `read_operation_value` でプレフィックスを保持するか、設計上プレフィックスなしを前提とするならドキュメント化する。
 - テキスト再構築時に xml ライタの自動エスケープを経由する。
 - 不平衡入力に対し `UnexpectedStructure`（[issue 0007](0007-remove-unexpected-structure-variant.md) で再利用検討）等へエラーを分類する。
-- [issue 0001](0001-fix-undeclared-namespace-prefix.md) 修正により `apply_patch` のラウンドトリップ依存問題は解消する。
+- [issue 0001](0001-fix-undeclared-namespace-prefix.md) は `write()` 単体の修正（ルート MPD への `xmlns:cenc/dvb/scte214` 宣言）に専念する。本 issue は `apply_patch` 内部の `parse_xml_to_dom` → `write_dom_element`（および `read_operation_value`）で、上記宣言を含むすべてのプレフィックス（cenc/dvb/scte214/xlink）の `xmlns:*` が往復後も維持・再宣言されるよう DOM 実装を修正する。0001 のみでは apply_patch のラウンドトリップ問題は解消しない。
 
 ## 完了条件
 
 - 名前空間付き要素のパッチ適用が意図通りに動作すること。
 - テキスト内の `]]>` 等が適切にエスケープされること。
 - 不平衡入力が適切な `Error` 種別で報告されること。
+- [issue 0001](0001-fix-undeclared-namespace-prefix.md) の修正により `write()` が出力する `xmlns:cenc/dvb/scte214`（および既存の `xmlns:xlink`）が、`apply_patch` の `write` → `parse_xml_to_dom` → `write_dom_element` 往復後も失われずに維持（または再宣言）されること。これを確認する単体テストを追加すること（0001 が writer.rs 単体の修正に専念するため、本 issue が apply_patch 往復の名前空間整形式化を担う）。
 
 ## 解決方法
 
