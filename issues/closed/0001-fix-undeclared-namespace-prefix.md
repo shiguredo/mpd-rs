@@ -2,7 +2,7 @@
 
 - Priority: High
 - Created: 2026-07-08
-- Completed:
+- Completed: 2026-07-08
 - Polished: 2026-07-08
 - Model: opencode-zen/hy3-free
 - Branch: feature/fix-undeclared-namespace-prefix
@@ -91,8 +91,19 @@
 
 ## 解決方法
 
-- `src/writer.rs` の `write_mpd` で、上記 `has_cenc` / `has_dvb` / `has_scte214` の走査（MPD ツリー全体を網羅）を行い、該当する場合のみルート MPD の `el` に `.ns(...)` を付与するよう修正する。走査ロジックは `write_mpd` 内にインラインではなく、`fn has_cenc(mpd: &Mpd) -> bool` / `fn has_dvb(mpd: &Mpd) -> bool` / `fn has_scte214(mpd: &Mpd) -> bool` といったヘルパー関数として `write_mpd` の近くに切り出すことで、可読性と偽陰性バグの防止を図る。`has_dvb` では `Descriptor::has_dvb_extension()` のような補助メソッドを `src/types.rs` に追加してもよい。9 箇所の `attr("cenc:...")` / `attr("dvb:...")` / `attr("scte214:...")` および `start_element("cenc:pssh")` の呼び出し本体は変更しない（ルート宣言によって束縛される）。`src/parser.rs` への変更は不要。
-- 本 issue は「不正な XML を出力するバグを直す」修正であり、公開 API のシグネチャは変わらないためカテゴリは `fix`（ブランチ `feature/fix-undeclared-namespace-prefix`）のままとする。ただし、`write()` の出力 XML 文字列は拡張属性・子要素を持つ場合に限りルート MPD 要素に `xmlns:cenc` / `xmlns:dvb` / `xmlns:scte214` が追加されるため、XML を文字列比較・スナップショット検証している利用者には影響がある。`CHANGES.md` の `## develop` セクションには `[FIX]` で以下のエントリを追加する。issue 0004 が先にマージされ `[ADD]` エントリが存在する場合は、種別順（CHANGE → ADD → UPDATE → FIX）に従って `[FIX]` を後に配置すること。
-  - `[FIX] write() の出力に名前空間宣言（cenc/dvb/scte214）を追加する`
-    - @ユーザー名
-    - #1
+- `src/types.rs`: `Descriptor` に `has_dvb_extension()` メソッドを追加。`dvb_url` / `dvb_mime_type` / `dvb_font_family` のいずれかが `Some` なら `true` を返す。
+- `src/writer.rs`: 以下のヘルパー関数を追加し、`write_mpd` から呼び出すように修正。
+  - `has_cenc(mpd)`: MPD ツリー全体（AdaptationSet / Representation / SubRepresentation の全 ContentProtection）を走査し、`default_kid` または `pssh` が存在すれば `true`。
+  - `has_dvb(mpd)`: MPD ツリー全体の全 Descriptor と全 BaseURL を走査し、dvb 拡張属性が存在すれば `true`。Preselection、ContentComponent、ServiceDescription.scope、Metrics.reportings を含む全階層を網羅。
+  - `has_scte214(mpd)`: AdaptationSet と Representation の `supplemental_codecs` を走査。
+  - 補助関数: `cp_has_cenc`、`base_url_has_dvb`、`adaptation_set_has_dvb`、`preselection_has_dvb`。
+- `write_mpd` 内で上記走査結果に基づき、必要な場合のみルート MPD 要素に `xmlns:cenc` / `xmlns:dvb` / `xmlns:scte214` の名前空間宣言を追加。
+- `Cargo.toml`: `include` に `/tests/**` を追加。
+- `tests/test_writer.rs`: 12 件の単体テストを新規作成。
+  - 全拡張フィールドを含む総合フィクスチャ（SubRepresentation 内 ContentProtection、全階層 Descriptor/BaseURL、Preselection、ContentComponent、ServiceDescription、Metrics を網羅）
+  - cenc のみ / dvb のみ / scte214 のみのフィクスチャ
+  - 拡張フィールドなしの最小限フィクスチャ
+  - 各フィクスチャで namespace-well-formed 検証、ラウンドトリップ検証、名前空間宣言の有無検証を実施。
+
+修正行数: writer.rs +195 行（ヘルパー関数 + 宣言追加 3 行）、types.rs +7 行、test_writer.rs +903 行。
+レビュー 2 周、致命的+重要 0 件。既存テスト 48 件 + 新規テスト 12 件 = 60 件すべて通過。

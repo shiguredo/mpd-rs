@@ -9,7 +9,7 @@ description = "MPD parser for MPEG-DASH"
 homepage = "https://github.com/shiguredo/mpd-rs"
 repository = "https://github.com/shiguredo/mpd-rs"
 readme = "README.md"
-include = ["/src/**", "/LICENSE", "/README.md"]
+include = ["/src/**", "/tests/**", "/LICENSE", "/README.md"]
 
 [dependencies]
 xml = "1.2"

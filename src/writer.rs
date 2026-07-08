@@ -54,6 +54,16 @@ fn write_mpd(w: &mut EventWriter<&mut Cursor<Vec<u8>>>, mpd: &Mpd) {
     if has_xlink {
         el = el.ns("xlink", "http://www.w3.org/1999/xlink");
     }
+    // 拡張名前空間の宣言（出力対象が MPD ツリー内に存在する場合のみ）
+    if has_cenc(mpd) {
+        el = el.ns("cenc", "urn:mpeg:cenc:2013");
+    }
+    if has_dvb(mpd) {
+        el = el.ns("dvb", "urn:dvb:dash:dash-extensions:2014-1");
+    }
+    if has_scte214(mpd) {
+        el = el.ns("scte214", "urn:scte:dash:scte214-extensions");
+    }
 
     let id_str;
     if let Some(ref id) = mpd.id {
@@ -140,6 +150,202 @@ fn write_mpd(w: &mut EventWriter<&mut Cursor<Vec<u8>>>, mpd: &Mpd) {
 
     w.write(XmlEvent::end_element())
         .expect("failed to close MPD element");
+}
+
+/// MPD ツリー全体を走査し、cenc 名前空間が必要かどうかを返す
+///
+/// `ContentProtection` の `default_kid` または `pssh` が 1 つでも `Some` であれば宣言が必要。
+/// `cenc:pssh` 子要素は `cp.pssh.is_some()` のときのみ出力されるため、この走査で内包される。
+fn has_cenc(mpd: &Mpd) -> bool {
+    mpd.periods.iter().any(|p| {
+        p.adaptation_sets.iter().any(|as_| {
+            cp_has_cenc(&as_.content_protections)
+                || as_.representations.iter().any(|r| {
+                    cp_has_cenc(&r.content_protections)
+                        || r.sub_representations
+                            .iter()
+                            .any(|sr| cp_has_cenc(&sr.content_protections))
+                })
+        })
+    })
+}
+
+/// ContentProtection のスライスに cenc 拡張（default_kid または pssh）が含まれるかを返す
+fn cp_has_cenc(cps: &[ContentProtection]) -> bool {
+    cps.iter()
+        .any(|cp| cp.default_kid.is_some() || cp.pssh.is_some())
+}
+
+/// MPD ツリー全体を走査し、dvb 名前空間が必要かどうかを返す
+///
+/// 全階層の `Descriptor`（`dvb_url` / `dvb_mime_type` / `dvb_font_family`）と
+/// 全階層の `BaseURL`（`dvb_priority` / `dvb_weight`）を存在量化で走査する。
+fn has_dvb(mpd: &Mpd) -> bool {
+    // MPD 直下の Descriptor
+    let mut mpd_descs = mpd
+        .essential_properties
+        .iter()
+        .chain(mpd.supplemental_properties.iter());
+    if mpd_descs.any(|d| d.has_dvb_extension()) {
+        return true;
+    }
+    // MPD 直下の BaseURL
+    if base_url_has_dvb(&mpd.base_urls) {
+        return true;
+    }
+    // ServiceDescription の scope
+    if mpd
+        .service_descriptions
+        .iter()
+        .any(|sd| sd.scope.as_ref().is_some_and(|d| d.has_dvb_extension()))
+    {
+        return true;
+    }
+    // Metrics の reportings
+    if mpd
+        .metrics
+        .iter()
+        .any(|m| m.reportings.iter().any(|d| d.has_dvb_extension()))
+    {
+        return true;
+    }
+
+    mpd.periods.iter().any(|p| {
+        // Period 直下の Descriptor
+        let mut period_descs = p
+            .essential_properties
+            .iter()
+            .chain(p.supplemental_properties.iter());
+        if period_descs.any(|d| d.has_dvb_extension()) {
+            return true;
+        }
+        if p.asset_identifier
+            .as_ref()
+            .is_some_and(|d| d.has_dvb_extension())
+        {
+            return true;
+        }
+        // Period 直下の BaseURL
+        if base_url_has_dvb(&p.base_urls) {
+            return true;
+        }
+        // Preselection
+        if p.preselections.iter().any(preselection_has_dvb) {
+            return true;
+        }
+
+        p.adaptation_sets.iter().any(|as_| {
+            if adaptation_set_has_dvb(as_) {
+                return true;
+            }
+            // BaseURL (AdaptationSet 直下)
+            if base_url_has_dvb(&as_.base_urls) {
+                return true;
+            }
+            // ContentComponent
+            if as_.content_components.iter().any(|cc| {
+                cc.accessibilities.iter().any(|d| d.has_dvb_extension())
+                    || cc.roles.iter().any(|d| d.has_dvb_extension())
+            }) {
+                return true;
+            }
+
+            as_.representations.iter().any(|r| {
+                // Representation 直下の Descriptor
+                let mut rep_descs = r
+                    .audio_channel_configurations
+                    .iter()
+                    .chain(r.essential_properties.iter())
+                    .chain(r.supplemental_properties.iter())
+                    .chain(r.frame_packings.iter())
+                    .chain(r.inband_event_streams.iter());
+                if rep_descs.any(|d| d.has_dvb_extension()) {
+                    return true;
+                }
+                // BaseURL (Representation 直下)
+                if base_url_has_dvb(&r.base_urls) {
+                    return true;
+                }
+                // SubRepresentation
+                r.sub_representations.iter().any(|sr| {
+                    let mut sr_descs = sr
+                        .audio_channel_configurations
+                        .iter()
+                        .chain(sr.essential_properties.iter())
+                        .chain(sr.supplemental_properties.iter())
+                        .chain(sr.frame_packings.iter())
+                        .chain(sr.inband_event_streams.iter());
+                    // SubRepresentation 内の Descriptor に dvb 拡張があれば宣言が必要
+                    if sr_descs.any(|d| d.has_dvb_extension()) {
+                        return true;
+                    }
+                    false
+                })
+            })
+        })
+    })
+}
+
+/// BaseURL のスライスに dvb 拡張属性が含まれるかを返す
+fn base_url_has_dvb(base_urls: &[BaseUrl]) -> bool {
+    base_urls
+        .iter()
+        .any(|bu| bu.dvb_priority.is_some() || bu.dvb_weight.is_some())
+}
+
+/// AdaptationSet 内の全 Descriptor に dvb 拡張が含まれるかを返す
+fn adaptation_set_has_dvb(as_: &AdaptationSet) -> bool {
+    as_.roles.iter().any(|d| d.has_dvb_extension())
+        || as_.accessibilities.iter().any(|d| d.has_dvb_extension())
+        || as_
+            .audio_channel_configurations
+            .iter()
+            .any(|d| d.has_dvb_extension())
+        || as_.viewpoints.iter().any(|d| d.has_dvb_extension())
+        || as_.frame_packings.iter().any(|d| d.has_dvb_extension())
+        || as_
+            .inband_event_streams
+            .iter()
+            .any(|d| d.has_dvb_extension())
+        || as_
+            .essential_properties
+            .iter()
+            .any(|d| d.has_dvb_extension())
+        || as_
+            .supplemental_properties
+            .iter()
+            .any(|d| d.has_dvb_extension())
+}
+
+/// Preselection 内の全 Descriptor に dvb 拡張が含まれるかを返す
+fn preselection_has_dvb(ps: &Preselection) -> bool {
+    ps.accessibilities.iter().any(|d| d.has_dvb_extension())
+        || ps.roles.iter().any(|d| d.has_dvb_extension())
+        || ps.viewpoints.iter().any(|d| d.has_dvb_extension())
+        || ps
+            .essential_properties
+            .iter()
+            .any(|d| d.has_dvb_extension())
+        || ps
+            .supplemental_properties
+            .iter()
+            .any(|d| d.has_dvb_extension())
+}
+
+/// MPD ツリー全体を走査し、scte214 名前空間が必要かどうかを返す
+///
+/// AdaptationSet または Representation の `supplemental_codecs` が
+/// 1 つでも `Some` であれば宣言が必要。
+fn has_scte214(mpd: &Mpd) -> bool {
+    mpd.periods.iter().any(|p| {
+        p.adaptation_sets.iter().any(|as_| {
+            as_.supplemental_codecs.is_some()
+                || as_
+                    .representations
+                    .iter()
+                    .any(|r| r.supplemental_codecs.is_some())
+        })
+    })
 }
 
 /// Period 要素を書き出す
