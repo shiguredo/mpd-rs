@@ -10,3 +10,5 @@
   - バグ修正
 
 ## develop
+- [FIX] write() の出力に名前空間宣言（cenc/dvb/scte214）を追加する
+  - @voluntas

@@ -457,6 +457,13 @@ pub struct Descriptor {
     pub dvb_font_family: Option<String>,
 }
 
+impl Descriptor {
+    /// DVB 拡張属性がいずれか設定されているかどうかを返す
+    pub fn has_dvb_extension(&self) -> bool {
+        self.dvb_url.is_some() || self.dvb_mime_type.is_some() || self.dvb_font_family.is_some()
+    }
+}
+
 /// UTCTiming 要素
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UtcTiming {
