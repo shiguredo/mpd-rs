@@ -2,7 +2,7 @@
 name = "shiguredo_mpd"
 version = "2026.1.0-canary.0"
 edition = "2024"
-rust-version = "1.88"
+rust-version = "1.93"
 authors = ["Shiguredo Inc."]
 license = "Apache-2.0"
 description = "MPD parser for MPEG-DASH"
