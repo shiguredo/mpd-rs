@@ -10,7 +10,13 @@
   - バグ修正
 
 ## develop
+
 - [CHANGE] MSRV (rust-version) を 1.88 から 1.93 に上げる
   - @voluntas
 - [FIX] write() の出力に名前空間宣言（cenc/dvb/scte214）を追加する
+  - @voluntas
+
+### misc
+
+- [UPDATE] fuzz ターゲットの clippy::collapsible_if 警告を解消する
   - @voluntas
